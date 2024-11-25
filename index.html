@@ -161,11 +161,18 @@
             reader.readAsArrayBuffer(file);  // Use readAsArrayBuffer for FBX files
         }
 
-        // Update camera position based on the loaded model's size
+        // Update camera position based on the loaded model's size and center it in view
         function updateCameraPositionAndControls() {
             const box = new THREE.Box3().setFromObject(model);
             const center = box.getCenter(new THREE.Vector3());
-            camera.position.set(center.x, center.y, 5);
+            const size = box.getSize(new THREE.Vector3());
+
+            // Calculate an appropriate distance based on model size
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const cameraDistance = maxDim * 1.5;
+
+            // Adjust the camera position to frame the model
+            camera.position.set(center.x, center.y, cameraDistance);
             camera.lookAt(center);
             controls.target.copy(center);
             controls.update();
