@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OBJ and FBX File Viewer</title>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; }
+        canvas { display: block; }
+
+        /* Container for buttons */
+        #button-container {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;  /* Add space between buttons */
+            padding: 10px;
+        }
+
+        /* Style for each button */
+        button {
+            padding: 10px;
+            font-size: 14px;
+            background-color: #333;
+            color: white;
+            border: none;
+            cursor: pointer;
+            width: 160px;  /* Ensure buttons are not too wide */
+        }
+
+        button:hover {
+            background-color: #555;
+        }
+
+        /* Position for the file input */
+        #fileInput {
+            position: absolute;
+            top: 10px;
+            left: 180px; /* Place the file input to the right of the buttons */
+            z-index: 10;
+            padding: 10px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+    </style>
+    <!-- Import Three.js as a module -->
+    <script type="module">
+        import * as THREE from 'https://cdn.skypack.dev/three@0.128.0/build/three.module.js';
+        import { OBJLoader } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/loaders/OBJLoader.js';
+        import { FBXLoader } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/loaders/FBXLoader.js';
+        import { OrbitControls } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/controls/OrbitControls.js';
+
+        let scene, camera, renderer, controls;
+        let model = null;
+
+        function init() {
+            // Set up the scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xaaaaaa);
+
+            // Set up the camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 5;
+
+            // Set up the renderer
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Set up controls (OrbitControls allow rotation, zoom, and pan)
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.25;
+            controls.screenSpacePanning = false;
+
+            // Add a simple light
+            const light = new THREE.AmbientLight(0xffffff, 1);
+            scene.add(light);
+
+            // Handle window resizing
+            window.addEventListener('resize', onWindowResize, false);
+
+            // Load the .obj or .fbx file when user selects one
+            document.getElementById('fileInput').addEventListener('change', onFileSelected, false);
+
+            // Set up the mode buttons
+            document.getElementById('wireframeBtn').addEventListener('click', toggleWireframe, false);
+            document.getElementById('shadedBtn').addEventListener('click', toggleShaded, false);
+            document.getElementById('xrayBtn').addEventListener('click', toggleXRay, false);
+
+            animate();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onFileSelected(event) {
+            const file = event.target.files[0];
+            const fileExtension = file.name.split('.').pop().toLowerCase();
+
+            // If the file is an OBJ file
+            if (fileExtension === 'obj') {
+                loadOBJ(file);
+            }
+            // If the file is an FBX file
+            else if (fileExtension === 'fbx') {
+                loadFBX(file);
+            } else {
+                alert('Please upload a valid .obj or .fbx file.');
+            }
+        }
+
+        // Function to load OBJ files
+        function loadOBJ(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const objLoader = new OBJLoader();
+                try {
+                    if (model) {
+                        scene.remove(model);  // Remove previous model if any
+                    }
+                    const text = e.target.result;
+                    model = objLoader.parse(text);
+
+                    console.log("OBJ model loaded:", model);
+
+                    const box = new THREE.Box3().setFromObject(model);
+                    const center = box.getCenter(new THREE.Vector3());
+                    model.position.sub(center);  // Center the model
+
+                    const size = box.getSize(new THREE.Vector3()).length();
+                    const scale = 2 / size;
+                    model.scale.set(scale, scale, scale);
+                    scene.add(model);
+
+                    // Update camera and controls after loading the model
+                    updateCameraPositionAndControls();
+                } catch (error) {
+                    console.error("Error loading OBJ file:", error);
+                }
+            };
+            reader.readAsText(file);  // Use readAsText instead of readAsArrayBuffer
+        }
+
+        // Function to load FBX files
+        function loadFBX(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const fbxLoader = new FBXLoader();
+                try {
+                    if (model) {
+                        scene.remove(model);  // Remove previous model if any
+                    }
+                    const arrayBuffer = e.target.result;
+                    model = fbxLoader.parse(arrayBuffer);
+
+                    console.log("FBX model loaded:", model);
+
+                    const box = new THREE.Box3().setFromObject(model);
+                    const center = box.getCenter(new THREE.Vector3());
+                    model.position.sub(center);  // Center the model
+
+                    const size = box.getSize(new THREE.Vector3()).length();
+                    const scale = 2 / size;
+                    model.scale.set(scale, scale, scale);
+                    scene.add(model);
+
+                    // Update camera and controls after loading the model
+                    updateCameraPositionAndControls();
+                } catch (error) {
+                    console.error("Error loading FBX file:", error);
+                }
+            };
+            reader.readAsArrayBuffer(file);  // Use readAsArrayBuffer for FBX files
+        }
+
+        // Function to update camera position and reset controls based on loaded model's size
+        function updateCameraPositionAndControls() {
+            // Get the bounding box of the model
+            const box = new THREE.Box3().setFromObject(model);
+            const center = box.getCenter(new THREE.Vector3());
+
+            // Set camera position and make sure it's centered around the model
+            camera.position.set(center.x, center.y, 5);
+            camera.lookAt(center);
+
+            // Reset controls to focus on the model
+            controls.target.copy(center);
+            controls.update();  // Update controls to make sure it's centered properly
+        }
+
+        // Toggle wireframe mode
+        function toggleWireframe() {
+            if (model) {
+                model.traverse(function(child) {
+                    if (child.isMesh) {
+                        child.material.wireframe = true;
+                    }
+                });
+            }
+        }
+
+        // Toggle shaded mode
+        function toggleShaded() {
+            if (model) {
+                model.traverse(function(child) {
+                    if (child.isMesh) {
+                        child.material.wireframe = false;
+                    }
+                });
+            }
+        }
+
+        // Toggle x-ray mode (semi-transparent)
+        function toggleXRay() {
+            if (model) {
+                model.traverse(function(child) {
+                    if (child.isMesh) {
+                        child.material.transparent = true;
+                        child.material.opacity = 0.5;
+                    }
+                });
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update the controls
+            controls.update();
+
+            // Render the scene
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</head>
+<body>
+
+<!-- File Upload Button -->
+<input type="file" id="fileInput" accept=".obj,.fbx" />
+
+<!-- Button Controls for Modes -->
+<div id="button-container">
+    <button id="wireframeBtn">Wireframe Mode</button>
+    <button id="shadedBtn">Shaded Mode</button>
+    <button id="xrayBtn">X
