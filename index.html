@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OBJ and FBX File Viewer</title>
+    <title>3D Model Viewer and Exporter</title>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; }
         canvas { display: block; }
@@ -16,7 +16,7 @@
             z-index: 10;
             display: flex;
             flex-direction: column;
-            gap: 10px;  /* Add space between buttons */
+            gap: 10px;
             padding: 10px;
         }
 
@@ -28,7 +28,7 @@
             color: white;
             border: none;
             cursor: pointer;
-            width: 160px;  /* Ensure buttons are not too wide */
+            width: 160px;
         }
 
         button:hover {
@@ -39,7 +39,7 @@
         #fileInput {
             position: absolute;
             top: 10px;
-            left: 180px; /* Place the file input to the right of the buttons */
+            left: 180px;
             z-index: 10;
             padding: 10px;
             font-size: 14px;
@@ -52,9 +52,12 @@
         import { OBJLoader } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/loaders/OBJLoader.js';
         import { FBXLoader } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/loaders/FBXLoader.js';
         import { OrbitControls } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/controls/OrbitControls.js';
+        import { OBJExporter } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/exporters/OBJExporter.js';
 
         let scene, camera, renderer, controls;
         let model = null;
+        let wireframeObject = null;
+        let wireframeMode = false;
 
         function init() {
             // Set up the scene
@@ -86,10 +89,12 @@
             // Load the .obj or .fbx file when user selects one
             document.getElementById('fileInput').addEventListener('change', onFileSelected, false);
 
-            // Set up the mode buttons
+            // Set up the download button
+            document.getElementById('downloadBtn').addEventListener('click', exportModel, false);
+
+            // Set up the wireframe and shaded toggle buttons
             document.getElementById('wireframeBtn').addEventListener('click', toggleWireframe, false);
             document.getElementById('shadedBtn').addEventListener('click', toggleShaded, false);
-            document.getElementById('xrayBtn').addEventListener('click', toggleXRay, false);
 
             animate();
         }
@@ -127,19 +132,7 @@
                     }
                     const text = e.target.result;
                     model = objLoader.parse(text);
-
-                    console.log("OBJ model loaded:", model);
-
-                    const box = new THREE.Box3().setFromObject(model);
-                    const center = box.getCenter(new THREE.Vector3());
-                    model.position.sub(center);  // Center the model
-
-                    const size = box.getSize(new THREE.Vector3()).length();
-                    const scale = 2 / size;
-                    model.scale.set(scale, scale, scale);
                     scene.add(model);
-
-                    // Update camera and controls after loading the model
                     updateCameraPositionAndControls();
                 } catch (error) {
                     console.error("Error loading OBJ file:", error);
@@ -159,19 +152,7 @@
                     }
                     const arrayBuffer = e.target.result;
                     model = fbxLoader.parse(arrayBuffer);
-
-                    console.log("FBX model loaded:", model);
-
-                    const box = new THREE.Box3().setFromObject(model);
-                    const center = box.getCenter(new THREE.Vector3());
-                    model.position.sub(center);  // Center the model
-
-                    const size = box.getSize(new THREE.Vector3()).length();
-                    const scale = 2 / size;
-                    model.scale.set(scale, scale, scale);
                     scene.add(model);
-
-                    // Update camera and controls after loading the model
                     updateCameraPositionAndControls();
                 } catch (error) {
                     console.error("Error loading FBX file:", error);
@@ -180,75 +161,80 @@
             reader.readAsArrayBuffer(file);  // Use readAsArrayBuffer for FBX files
         }
 
-        // Function to update camera position and reset controls based on loaded model's size
+        // Update camera position based on the loaded model's size
         function updateCameraPositionAndControls() {
-            // Get the bounding box of the model
             const box = new THREE.Box3().setFromObject(model);
             const center = box.getCenter(new THREE.Vector3());
-
-            // Set camera position and make sure it's centered around the model
             camera.position.set(center.x, center.y, 5);
             camera.lookAt(center);
-
-            // Reset controls to focus on the model
             controls.target.copy(center);
-            controls.update();  // Update controls to make sure it's centered properly
+            controls.update();
+        }
+
+        // Export the model to OBJ format and download it
+        function exportModel() {
+            if (model) {
+                const exporter = new OBJExporter();
+                const objData = exporter.parse(model);
+
+                // Create a Blob and trigger a download
+                const blob = new Blob([objData], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'exported_model.obj';
+                link.click();
+                URL.revokeObjectURL(url);  // Clean up the URL object
+            } else {
+                alert('Please load a model before exporting.');
+            }
         }
 
         // Toggle wireframe mode
         function toggleWireframe() {
-            if (model) {
-                model.traverse(function(child) {
-                    if (child.isMesh) {
-                        child.material.wireframe = true;
-                    }
-                });
+            if (model && !wireframeObject) {
+                const wireframeGeometry = new THREE.EdgesGeometry(model.geometry);
+                wireframeObject = new THREE.LineSegments(wireframeGeometry, new THREE.LineBasicMaterial({ color: 0x000000 }));
+                scene.add(wireframeObject);
+            }
+
+            wireframeMode = !wireframeMode;
+            if (wireframeObject) {
+                wireframeObject.visible = wireframeMode;
             }
         }
 
         // Toggle shaded mode
         function toggleShaded() {
             if (model) {
-                model.traverse(function(child) {
+                model.traverse(child => {
                     if (child.isMesh) {
-                        child.material.wireframe = false;
+                        child.material.wireframe = false; // Ensure shaded mode is on
                     }
                 });
             }
         }
 
-        // Toggle x-ray mode (semi-transparent)
-        function toggleXRay() {
-            if (model) {
-                model.traverse(function(child) {
-                    if (child.isMesh) {
-                        child.material.transparent = true;
-                        child.material.opacity = 0.5;
-                    }
-                });
-            }
-        }
-
+        // Animation loop
         function animate() {
             requestAnimationFrame(animate);
-
-            // Update the controls
-            controls.update();
-
-            // Render the scene
+            controls.update(); // Update controls (for smooth rotation/zoom)
             renderer.render(scene, camera);
         }
 
+        // Initialize the scene
         init();
     </script>
 </head>
 <body>
-
-<!-- File Upload Button -->
-<input type="file" id="fileInput" accept=".obj,.fbx" />
-
-<!-- Button Controls for Modes -->
-<div id="button-container">
-    <button id="wireframeBtn">Wireframe Mode</button>
-    <button id="shadedBtn">Shaded Mode</button>
-    <button id="xrayBtn">X
+    <!-- Input for uploading files -->
+    <input type="file" id="fileInput" accept=".obj,.fbx" />
+    
+    <!-- Container for buttons -->
+    <div id="button-container">
+        <button id="downloadBtn">Download as OBJ</button>
+        <button id="wireframeBtn">Toggle Wireframe</button>
+        <button id="shadedBtn">Toggle Shaded</button>
+    </div>
+</body>
+</html>
